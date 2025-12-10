@@ -1,68 +1,83 @@
 import streamlit as st
 import pandas as pd
-import requests
-from bs4 import BeautifulSoup
 import os
 import datetime
 
 st.set_page_config(layout="centered")
-st.title("📥 Resultados automáticos desde LoteriaDominicana.com.do")
+st.title("📊 Línea del Día según Vibración y Historial (AB → ABA)")
 
-HIST_DIR = "historial_scraping"
+# Carpeta historial
+HIST_DIR = "historial_loterias"
 os.makedirs(HIST_DIR, exist_ok=True)
 
+# Nombres exactos de las loterías
 LOTERIAS = [
-    "Lotería Nacional", "La Suerte", "Loteka", "Leidsa", "Lotería Real",
-    "La Primera", "Gana Más",  # etc según los nombres en la web
+    "Loteria Nacional- Gana Más",
+    "Loteria Nacional- Noche",
+    "Quiniela Palé",
+    "Quiniela Real",
+    "Quiniela Loteka",
+    "Quiniela La Primera",
+    "Quiniela La Primera Noche",
+    "Quiniela La Suerte",
+    "Quiniela La Suerte 6PM",
+    "New York Tarde",
+    "New York Noche",
+    "Florida Tarde",
+    "Florida Noche",
+    "Anguila 10AM",
+    "Anguila 1PM",
+    "Anguila 6PM",
+    "Anguila 9PM",
 ]
 
-def descargar_resultados():
-    url = "https://www.loteriadominicana.com.do/"
-    resp = requests.get(url, timeout=10)
-    resp.raise_for_status()
-    return resp.text
+# ----------------- Funciones -----------------
 
-def parsear_resultados(html):
-    soup = BeautifulSoup(html, "html.parser")
-    resultados = {}
-    # Ejemplo genérico: buscar etiquetas que indiquen loteria + número ganador
-    # Este bloque debes adaptar según la estructura real del HTML
-    for lot in LOTERIAS:
-        tag = soup.find("div", text=lambda t: t and lot in t)
-        if tag:
-            # Supongamos que junto está el número ganador en un <span>
-            num = tag.find_next("span").get_text(strip=True)
-            resultados[lot] = num
-    hoy = datetime.date.today().isoformat()
-    return hoy, resultados
+def registrar_numero(loteria, numero, vibracion_dia):
+    """Registra el número diario y retorna línea del día según AB → ABA"""
+    archivo = os.path.join(HIST_DIR, f"{loteria.replace(' ','_')}.csv")
+    df = pd.read_csv(archivo) if os.path.exists(archivo) else pd.DataFrame(columns=["fecha","numero","vibracion"])
+    
+    fecha = datetime.date.today().isoformat()
+    df = pd.concat([df, pd.DataFrame([{"fecha": fecha, "numero": numero, "vibracion": vibracion_dia}])], ignore_index=True)
+    df.to_csv(archivo, index=False)
+    
+    # Generar Línea del Día AB → ABA
+    numero = str(numero).zfill(2)
+    if numero[0] == numero[1]:
+        linea = numero  # AA → AA
+    else:
+        linea = numero[0] + numero[1] + numero[0]  # AB → ABA
+    return linea
 
-def actualizar_historial():
-    html = descargar_resultados()
-    fecha, res = parsear_resultados(html)
-    for lot, num in res.items():
-        archivo = os.path.join(HIST_DIR, f"{lot.replace(' ','_')}.csv")
-        df = pd.read_csv(archivo) if os.path.exists(archivo) else pd.DataFrame(columns=["fecha","numero"])
-        if not ((df["fecha"]==fecha) & (df["numero"]==num)).any():
-            df = pd.concat([df, pd.DataFrame([{"fecha":fecha,"numero":num}])], ignore_index=True)
-            df.to_csv(archivo, index=False)
-    return res
+def leer_historial(loteria):
+    archivo = os.path.join(HIST_DIR, f"{loteria.replace(' ','_')}.csv")
+    if os.path.exists(archivo):
+        return pd.read_csv(archivo)
+    else:
+        return pd.DataFrame(columns=["fecha","numero","vibracion"])
 
-if st.button("Actualizar resultados"):
+# ----------------- Interfaz -----------------
+
+st.subheader("Selecciona la Lotería")
+loteria_sel = st.selectbox("Lotería", LOTERIAS)
+
+st.subheader("Registrar Número y Vibración del Día")
+numero_input = st.text_input("Número del día (00-99)", value="00")
+vibracion_input = st.text_input("Vibración del día (0-99)", value="17")
+
+if st.button("Registrar y Generar Línea"):
     try:
-        res = actualizar_historial()
-        st.success("Historial actualizado.")
-        st.write(res)
+        linea = registrar_numero(loteria_sel, numero_input, vibracion_input)
+        st.markdown(f"**Línea del Día:** <span style='font-size:28px;color:green'>{linea}</span>", unsafe_allow_html=True)
+        st.success("Número registrado y Línea del Día calculada.")
     except Exception as e:
-        st.error("Error al actualizar: " + str(e))
+        st.error(f"Error: {e}")
 
-st.header("Historial por lotería")
-loteria_sel = st.selectbox("Elige lotería", LOTERIAS)
-archivo = os.path.join(HIST_DIR, f"{loteria_sel.replace(' ','_')}.csv")
-if os.path.exists(archivo):
-    df = pd.read_csv(archivo)
-    st.dataframe(df)
-else:
-    st.write("No hay historial aún para esa lotería.")
+st.subheader("Historial de la Lotería")
+df_hist = leer_historial(loteria_sel)
+st.dataframe(df_hist.tail(10))  # últimos 10 registros
+
 
 
 
