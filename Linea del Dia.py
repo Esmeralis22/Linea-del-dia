@@ -1,12 +1,12 @@
-# app_linea_conectate.py
 import streamlit as st
-import requests
-from bs4 import BeautifulSoup
-import unicodedata
+import random
+from datetime import datetime
 
-st.set_page_config(page_title="Línea del Día - Conectate", layout="centered")
+st.set_page_config(page_title="Línea del Día", layout="wide")
+st.title("Línea del Día de Loterías (Ritmo Algorítmico)")
 
-LOTERIAS = [
+# --- Lista de loterías ---
+loterias = [
     "Gana Más",
     "Lotería Nacional",
     "Quiniela Leidsa",
@@ -19,66 +19,52 @@ LOTERIAS = [
     "La Primera Día",
     "Primera Noche",
     "La Suerte MD",
-    "La Suerte 6PM",
-    "Anguila 10:00 AM",
-    "Anguila 1:00 PM",
-    "Anguila 6:00 PM",
-    "Anguila 9:00 PM",
+    "La Suerte 6PM"
 ]
 
-BASE_URL = "https://www.conectate.com.do/loterias/pagina/ultimos-resultados"
+# --- Estado interno (session_state para mantener coherencia) ---
+if 'estado' not in st.session_state:
+    st.session_state.estado = {}
+    for lot in loterias:
+        st.session_state.estado[lot] = {
+            "ultimo_num": random.randint(0, 99),  # 2 dígitos iniciales
+            "incremento": random.choice([1,3,5,7])
+        }
 
-def normalize(text):
-    return unicodedata.normalize('NFKD', text).encode('ASCII','ignore').decode().lower().strip()
-
-def get_last_draw_number(loteria_name):
-    """
-    Intenta extraer el último número de 2 dígitos para la lotería indicada.
-    Retorna 'NN' string o None si no encuentra.
-    """
-    resp = requests.get(BASE_URL, timeout=10)
-    if resp.status_code != 200:
-        return None
-    soup = BeautifulSoup(resp.text, "html.parser")
+# --- Función para generar número tipo span ---
+def generar_numero_dos_digitos(loteria):
+    info = st.session_state.estado[loteria]
+    ultimo = info["ultimo_num"]
+    inc = info["incremento"]
     
-    # Buscar una línea donde aparezca el nombre de la lotería
-    lot_norm = normalize(loteria_name)
-    # cada resultado suele estar en un row; buscar cualquier texto que contenga la lotería
-    for tag in soup.find_all(text=True):
-        txt = normalize(tag)
-        if lot_norm in txt:
-            # después del nombre usualmente vienen los números
-            parent = tag.parent
-            # buscar en sus hermanos o descendientes algo que parezca dos dígitos
-            for sib in parent.find_all(text=True):
-                s = sib.strip()
-                if s.isdigit() and len(s)==2:
-                    return s
-    return None
-
-def generar_linea(numero_anterior):
-    """Si numero_anterior es 'AB' → devuelve ABA; si AA → AA."""
-    if not numero_anterior or len(numero_anterior)!=2:
-        return None
-    a, b = numero_anterior[0], numero_anterior[1]
-    if a == b:
-        return a + b
+    nuevo = (ultimo + inc) % 100
+    st.session_state.estado[loteria]["ultimo_num"] = nuevo
+    
+    d1 = nuevo // 10
+    d2 = nuevo % 10
+    if d1 == d2:
+        return f"{d1}{d2}"  # AA
     else:
-        return a + b + a
+        return f"{d1}{d2}{d1}"  # ABA
 
-st.title("Línea del Día - Según Conectate")
+# --- Botón para generar línea del día ---
+if st.button("Generar Línea del Día"):
+    fecha_hoy = datetime.now().strftime("%Y-%m-%d")
+    linea_dia = {"Fecha": fecha_hoy}
+    
+    for lot in loterias:
+        linea_dia[lot] = generar_numero_dos_digitos(lot)
+    
+    st.session_state.linea_dia = linea_dia
 
-loteria = st.selectbox("Selecciona la lotería", LOTERIAS)
+# --- Mostrar la línea del día ---
+if 'linea_dia' in st.session_state:
+    st.subheader(f"Línea del Día: {st.session_state.linea_dia['Fecha']}")
+    
+    # Mostrar en columnas
+    for lot in loterias:
+        st.markdown(f"**{lot}:** {st.session_state.linea_dia[lot]}")
 
-if st.button("Generar línea del día"):
-    num = get_last_draw_number(loteria)
-    if num is None:
-        st.error("No se encontró resultado reciente para esa lotería.")
-    else:
-        linea = generar_linea(num)
-        st.markdown(f"**Lotería:** {loteria}")
-        st.markdown(f"**Último resultado:** {num}")
-        st.markdown(f"**Línea del Día sugerida:** <span style='font-size:48px;color:green'>{linea}</span>", unsafe_allow_html=True)
 
 
 
