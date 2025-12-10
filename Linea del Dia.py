@@ -1,4 +1,4 @@
-# linea_del_dia_completa.py
+# linea_del_dia_historial.py
 import streamlit as st
 import pandas as pd
 import requests
@@ -36,7 +36,7 @@ def normalize(s):
     return s.strip().lower()
 
 def fetch_results_page(fecha=None):
-    """Devuelve el HTML de la página de resultados. Si fecha=None toma hoy."""
+    """Devuelve HTML de la página de resultados. Si fecha=None toma hoy."""
     if fecha:
         url = f"{BASE_URL}resultados?fecha={fecha}"
     else:
@@ -46,7 +46,7 @@ def fetch_results_page(fecha=None):
     return resp.text
 
 def parse_results(html):
-    """Extrae resultados de la página."""
+    """Extrae resultados de la página y devuelve lista de dicts."""
     soup = BeautifulSoup(html, "html.parser")
     results = []
     today = date.today().isoformat()
@@ -64,6 +64,10 @@ def parse_results(html):
 
 def save_historial(df):
     """Guarda historial por lotería evitando duplicados."""
+    for col in ["fecha", "loteria", "numero_1ro"]:
+        if col not in df.columns:
+            df[col] = []
+
     for lot in LOTERIAS:
         df_lot = df[df["loteria"]==lot]
         if df_lot.empty:
@@ -82,7 +86,7 @@ def load_historial(loteria):
         return pd.DataFrame(columns=["fecha","loteria","numero_1ro"])
 
 def obtener_historico_90dias():
-    """Extrae resultados de los últimos 90 días y devuelve DataFrame."""
+    """Extrae resultados últimos 90 días (simulación)."""
     historico = []
     for dias_atras in range(0, 90):
         f = (date.today() - timedelta(days=dias_atras)).isoformat()
@@ -92,33 +96,57 @@ def obtener_historico_90dias():
             historico.extend(resultados_dia)
         except Exception as e:
             print(f"No se pudo obtener {f}: {e}")
-    return pd.DataFrame(historico)
+    df = pd.DataFrame(historico)
+    for col in ["fecha","loteria","numero_1ro"]:
+        if col not in df.columns:
+            df[col] = []
+    return df
 
-def generar_linea_del_dia(numero_base):
-    """Genera AB -> ABA automáticamente."""
-    a, b = numero_base[0], numero_base[1]
-    return f"{a}{b}{a}"
+def calcular_vibracion(fecha):
+    """Calcula vibración del día a partir de la fecha, valor 00-99."""
+    s = fecha.day + fecha.month + fecha.year
+    return f"{s%100:02d}"
+
+def generar_linea_del_dia(numero_base, df_hist, loteria):
+    """Genera AB -> ABA tomando en cuenta historial reciente."""
+    base_num = int(numero_base)
+    # Revisa si ya salió hoy
+    hoy = date.today().isoformat()
+    df_lot = df_hist[df_hist["loteria"]==loteria]
+    numeros_hoy = df_lot[df_lot["fecha"]==hoy]["numero_1ro"].astype(int).tolist()
+    intento = base_num
+    intentos = 0
+    while intento in numeros_hoy and intentos<10:
+        intento = (intento + 1) % 100
+        intentos +=1
+    num_str = f"{intento:02d}"
+    # Formato ABA
+    a, b = num_str[0], num_str[1]
+    return f"{a}{b}{a}", intento in numeros_hoy
 
 # ---------------- STREAMLIT ----------------
-st.title("Línea del Día - Loterías Dominicanas y Americanas")
+st.title("Línea del Día Inteligente - Loterías Dominicanas y Americanas")
 
 # Selector de lotería
 loteria_sel = st.selectbox("Selecciona la lotería:", LOTERIAS)
 
-# Botón para inicializar historial 90 días
+# Inicializar historial 90 días
 if st.button("Inicializar historial 90 días"):
     with st.spinner("Obteniendo resultados últimos 90 días..."):
         df_hist = obtener_historico_90dias()
         save_historial(df_hist)
     st.success("Historial de 90 días actualizado.")
 
-# Botón de actualizar resultados del día
+# Actualizar resultados del día
 if st.button("Actualizar resultados hoy"):
     with st.spinner("Obteniendo resultados de hoy..."):
         try:
             html = fetch_results_page()
             res = parse_results(html)
             df = pd.DataFrame(res)
+            for col in ["fecha","loteria","numero_1ro"]:
+                if col not in df.columns:
+                    df[col] = []
             save_historial(df)
             st.success("Resultados de hoy agregados al historial.")
         except Exception as e:
@@ -132,15 +160,18 @@ if st.button("Mostrar historial"):
     else:
         st.dataframe(df_hist)
 
-# Generar Línea del Día
-st.subheader("Generar Línea del Día")
-numero_input = st.text_input("Número base (dos dígitos) para la línea del día:", max_chars=2)
-if st.button("Generar línea"):
-    if len(numero_input)==2 and numero_input.isdigit():
-        linea = generar_linea_del_dia(numero_input)
-        st.markdown(f"<span style='font-size:40px; color:blue;'>{linea}</span>", unsafe_allow_html=True)
-    else:
-        st.error("Introduce un número válido de dos dígitos.")
+# Línea del Día inteligente
+st.subheader("Línea del Día Automática")
+df_hist = load_historial(loteria_sel)
+hoy = date.today()
+numero_base = calcular_vibracion(hoy)
+linea, ya_salio = generar_linea_del_dia(numero_base, df_hist, loteria_sel)
+
+if ya_salio:
+    st.warning(f"Número base {numero_base} ya salió hoy, ajustado a {linea[:2]}")
+st.markdown(f"<span style='font-size:60px; color:green;'>{linea}</span>", unsafe_allow_html=True)
+st.caption(f"Número base del día según vibración: {numero_base}")
+
 
 
 
