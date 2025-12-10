@@ -9,10 +9,11 @@ st.title("🎲 Número Vibración del Día por Lotería")
 st.write("Selecciona la lotería y genera tu número según la vibración del día.")
 
 # Listas de loterías
-lot_americanas = ["Anguilla 10:00 AM", "Anguilla 1:00 PM", "Anguilla 6:00 PM", "Anguilla 9:00 PM",
-                   "Florida Día", "Florida Noche", "New York Tarde", "New York Noche"]
+lot_americanas = [
+    "Anguilla 10:00 AM", "Anguilla 1:00 PM", "Anguilla 6:00 PM", "Anguilla 9:00 PM",
+    "Florida Día", "Florida Noche", "New York Tarde", "New York Noche"
+]
 lot_dominicanas = ["Primera Día", "Primera Noche", "Lotería Nacional", "La Suerte"]
-
 todas_loterias = lot_dominicanas + lot_americanas
 
 # Selector de lotería
@@ -25,14 +26,15 @@ def vibracion_del_dia(lot):
     random.seed(today.strftime("%Y-%m-%d") + lot)
     return random.randint(0, 99)
 
-# Función espejo / repetición
+# Función número a jugar con modo espejo / repetición exacta
 def numero_a_jugar(n):
     str_n = str(n).zfill(2)
     if str_n[0] == str_n[1]:
+        # dígitos iguales → repetir 3 veces
         return str_n*3
     else:
-        espejo = str_n[::-1]
-        return str_n + espejo[0]
+        # dígitos distintos → modo espejo (ABA)
+        return str_n + str_n[::-1][0]  # AB -> ABA
 
 # HTML span animado
 def generar_span(numero):
@@ -67,3 +69,5 @@ if st.button("Generar Número del Día"):
     st.subheader(f"🎯 Número para {loteria}")
     components.html(generar_span(numero_final), height=200)
     st.write(f"**Número base:** {num_base} → **Número a jugar:** {numero_final}")
+
+
