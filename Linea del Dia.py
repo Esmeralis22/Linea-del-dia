@@ -26,15 +26,15 @@ def vibracion_del_dia(lot):
     random.seed(today.strftime("%Y-%m-%d") + lot)
     return random.randint(0, 99)
 
-# Función número a jugar con modo espejo / repetición exacta
+# Función número a jugar con regla correcta
 def numero_a_jugar(n):
     str_n = str(n).zfill(2)
     if str_n[0] == str_n[1]:
-        # dígitos iguales → repetir 3 veces
-        return str_n*3
+        # dígitos iguales → AAA
+        return str_n + str_n + str_n
     else:
-        # dígitos distintos → modo espejo (ABA)
-        return str_n + str_n[::-1][0]  # AB -> ABA
+        # dígitos distintos → ABA
+        return str_n[0] + str_n[1] + str_n[0]
 
 # HTML span animado
 def generar_span(numero):
@@ -69,5 +69,7 @@ if st.button("Generar Número del Día"):
     st.subheader(f"🎯 Número para {loteria}")
     components.html(generar_span(numero_final), height=200)
     st.write(f"**Número base:** {num_base} → **Número a jugar:** {numero_final}")
+
+
 
 
