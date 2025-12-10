@@ -3,10 +3,10 @@ import random
 from datetime import datetime
 
 # Configuración de la página
-st.set_page_config(page_title="Línea del Día", layout="wide")
-st.title("Línea del Día de Loterías (Ritmo Algorítmico)")
+st.set_page_config(page_title="Línea del Día Exacta", layout="wide")
+st.title("Línea del Día Exacta de Loterías (Ritmo Algorítmico)")
 
-# --- Lista de loterías ---
+# Lista de loterías
 loterias = [
     "Gana Más",
     "Lotería Nacional",
@@ -23,33 +23,44 @@ loterias = [
     "La Suerte 6PM"
 ]
 
-# --- Inicializar estado y línea única si no existe ---
-if 'estado' not in st.session_state:
-    st.session_state.estado = {}
-    st.session_state.lineas = {}  # línea única por lotería
-    for lot in loterias:
-        st.session_state.estado[lot] = {
-            "ultimo_num": random.randint(0, 99),  # número inicial 2 dígitos
-            "incremento": random.choice([1,3,5,7])
-        }
-        # Generar línea única al inicio
-        info = st.session_state.estado[lot]
-        ultimo = info["ultimo_num"]
-        d1 = ultimo // 10
-        d2 = ultimo % 10
-        if d1 == d2:
-            representacion = f"{d1}{d2}"  # AA
-        else:
-            representacion = f"{d1}{d2}{d1}"  # ABA
-        st.session_state.lineas[lot] = representacion
+# Función determinista para generar número tipo span según fecha y lotería
+def generar_linea_dia(loteria, fecha):
+    # Crear semilla única a partir de la fecha y el nombre de la lotería
+    semilla = sum([ord(c) for c in loteria]) + int(fecha.replace('-', ''))
+    random.seed(semilla)
+    
+    # Patrones por tipo de lotería
+    if "Quiniela" in loteria or "New York" in loteria or "Gana Más" in loteria or "Florida" in loteria:
+        decena = random.choice([0,2,4,6,8])
+        unidad = random.choice([1,3,5,7,9])
+    elif "Lotería Nacional" in loteria:
+        decena = random.randint(0,9)
+        unidad = random.randint(0,9)
+    elif "La Suerte" in loteria or "Primera" in loteria:
+        decena = random.randint(0,9)
+        unidad = random.randint(0,9)
+    else:
+        decena = random.randint(0,9)
+        unidad = random.randint(0,9)
+    
+    # Representación tipo span
+    if decena == unidad:
+        return f"{decena}{unidad}"  # AA
+    else:
+        return f"{decena}{unidad}{decena}"  # ABA
 
-# --- Menú para seleccionar lotería ---
+# Selección de la lotería
 loteria_seleccionada = st.selectbox("Selecciona la lotería", loterias)
 
-# --- Mostrar la línea del día ---
-st.subheader(f"Línea del Día para {loteria_seleccionada}")
-st.markdown(f"**{st.session_state.lineas[loteria_seleccionada]}**")
+# Fecha de hoy
+fecha_hoy = datetime.now().strftime("%Y-%m-%d")
 
+# Generar línea del día exacta
+linea_dia = generar_linea_dia(loteria_seleccionada, fecha_hoy)
+
+# Mostrar resultado
+st.subheader(f"Línea del Día para {loteria_seleccionada} ({fecha_hoy})")
+st.markdown(f"**{linea_dia}**")
 
 
 
