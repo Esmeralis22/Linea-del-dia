@@ -1,113 +1,84 @@
-# linea_del_dia.py
+# app_linea_conectate.py
 import streamlit as st
-import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-import os
-from datetime import datetime, timedelta
+import unicodedata
 
-# ---------- Configuración ----------
-LOTTERIES = [
-    "Loteria Nacional- Gana Más",
-    "Loteria Nacional- Noche",
-    "Quiniela Palé",
+st.set_page_config(page_title="Línea del Día - Conectate", layout="centered")
+
+LOTERIAS = [
+    "Gana Más",
+    "Lotería Nacional",
+    "Quiniela Leidsa",
     "Quiniela Real",
     "Quiniela Loteka",
-    "Quiniela La Primera",
-    "Quiniela La Primera Noche",
-    "Quiniela La Suerte",
-    "Quiniela La Suerte 6PM",
-    "New York Tarde",
-    "New York Noche",
-    "Florida Tarde",
+    "New York 3:30",
+    "New York 11:30",
+    "Florida Día",
     "Florida Noche",
-    "Anguila 10AM",
-    "Anguila 1PM",
-    "Anguila 6PM",
-    "Anguila 9PM",
+    "La Primera Día",
+    "Primera Noche",
+    "La Suerte MD",
+    "La Suerte 6PM",
+    "Anguila 10:00 AM",
+    "Anguila 1:00 PM",
+    "Anguila 6:00 PM",
+    "Anguila 9:00 PM",
 ]
 
-HIST_DIR = "historial_loterias"
-if not os.path.exists(HIST_DIR):
-    os.makedirs(HIST_DIR)
+BASE_URL = "https://www.conectate.com.do/loterias/pagina/ultimos-resultados"
 
-# ---------- Funciones ----------
-def scrap_ultimo_numero(loteria):
+def normalize(text):
+    return unicodedata.normalize('NFKD', text).encode('ASCII','ignore').decode().lower().strip()
+
+def get_last_draw_number(loteria_name):
     """
-    Scrap del último resultado publicado de la lotería desde la web pública.
+    Intenta extraer el último número de 2 dígitos para la lotería indicada.
+    Retorna 'NN' string o None si no encuentra.
     """
-    # URL de la página con resultados (ejemplo: Lotería Dominicana)
-    URL = "https://www.loteriadominicana.com.do/"  # modificar según estructura real
-    try:
-        r = requests.get(URL, timeout=10)
-        r.raise_for_status()
-        soup = BeautifulSoup(r.text, "html.parser")
-        # Buscar la sección que corresponda a la lotería
-        # Ajusta este selector según la estructura real de la página
-        # Ejemplo: <div class="loteria" data-name="Loteria Nacional- Gana Más">66</div>
-        lot_div = soup.find("div", {"data-name": loteria})
-        if lot_div:
-            numero = lot_div.text.strip()
-            if numero.isdigit() and len(numero) == 2:
-                return numero
-    except Exception as e:
-        st.warning(f"No se pudo obtener el número de {loteria}: {e}")
+    resp = requests.get(BASE_URL, timeout=10)
+    if resp.status_code != 200:
+        return None
+    soup = BeautifulSoup(resp.text, "html.parser")
+    
+    # Buscar una línea donde aparezca el nombre de la lotería
+    lot_norm = normalize(loteria_name)
+    # cada resultado suele estar en un row; buscar cualquier texto que contenga la lotería
+    for tag in soup.find_all(text=True):
+        txt = normalize(tag)
+        if lot_norm in txt:
+            # después del nombre usualmente vienen los números
+            parent = tag.parent
+            # buscar en sus hermanos o descendientes algo que parezca dos dígitos
+            for sib in parent.find_all(text=True):
+                s = sib.strip()
+                if s.isdigit() and len(s)==2:
+                    return s
     return None
 
-def load_historial(loteria):
-    archivo = os.path.join(HIST_DIR, f"{loteria}.csv")
-    if os.path.exists(archivo):
-        df = pd.read_csv(archivo)
-        df["fecha"] = pd.to_datetime(df["fecha"])
-        return df
-    else:
-        return pd.DataFrame(columns=["fecha","numero"])
-
-def save_historial(loteria, numero):
-    df = load_historial(loteria)
-    hoy = datetime.now().date()
-    df = pd.concat([df, pd.DataFrame([{"fecha": hoy, "numero": numero}])], ignore_index=True)
-    archivo = os.path.join(HIST_DIR, f"{loteria}.csv")
-    df.to_csv(archivo, index=False)
-
-def generar_linea_del_dia(numero_anterior):
-    """
-    Genera la Línea del Día según el número anterior.
-    AB -> ABA
-    AA -> AA
-    """
-    if not numero_anterior or len(numero_anterior) != 2 or not numero_anterior.isdigit():
-        return "??"
+def generar_linea(numero_anterior):
+    """Si numero_anterior es 'AB' → devuelve ABA; si AA → AA."""
+    if not numero_anterior or len(numero_anterior)!=2:
+        return None
     a, b = numero_anterior[0], numero_anterior[1]
     if a == b:
-        return a + a
+        return a + b
     else:
         return a + b + a
 
-# ---------- Interfaz Streamlit ----------
-st.set_page_config(page_title="Línea del Día", layout="wide")
-st.title("Línea del Día - Vibración y Ritmo Algorítmico")
+st.title("Línea del Día - Según Conectate")
 
-loteria_seleccionada = st.selectbox("Selecciona la Lotería", LOTTERIES)
+loteria = st.selectbox("Selecciona la lotería", LOTERIAS)
 
-# Botón para actualizar y calcular línea
-if st.button("Generar Línea del Día"):
-    numero_anterior = scrap_ultimo_numero(loteria_seleccionada)
-    if numero_anterior:
-        linea = generar_linea_del_dia(numero_anterior)
-        save_historial(loteria_seleccionada, numero_anterior)
-        st.markdown(f"<span style='font-size:40px;color:blue'>{linea}</span>", unsafe_allow_html=True)
-        st.info(f"Número anterior: {numero_anterior}")
+if st.button("Generar línea del día"):
+    num = get_last_draw_number(loteria)
+    if num is None:
+        st.error("No se encontró resultado reciente para esa lotería.")
     else:
-        st.error(f"No se pudo obtener el último número de {loteria_seleccionada}")
-
-# Mostrar historial
-if st.checkbox("Mostrar Historial"):
-    df_hist = load_historial(loteria_seleccionada)
-    if df_hist.empty:
-        st.write("No hay historial para esta lotería.")
-    else:
-        st.dataframe(df_hist.sort_values(by="fecha", ascending=False))
+        linea = generar_linea(num)
+        st.markdown(f"**Lotería:** {loteria}")
+        st.markdown(f"**Último resultado:** {num}")
+        st.markdown(f"**Línea del Día sugerida:** <span style='font-size:48px;color:green'>{linea}</span>", unsafe_allow_html=True)
 
 
 
