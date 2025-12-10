@@ -1,19 +1,12 @@
+# linea_del_dia_app.py
 import streamlit as st
 import pandas as pd
-import os
-import datetime
 import requests
 from bs4 import BeautifulSoup
-import unicodedata
+import datetime
+import os
 
-st.set_page_config(layout="centered")
-st.title("📊 Línea del Día — Lotería Dominicana")
-
-# Carpeta historial
-HIST_DIR = "historial_loterias"
-os.makedirs(HIST_DIR, exist_ok=True)
-
-# Lista de loterías
+# ---------------- CONFIG ----------------
 LOTERIAS = [
     "Loteria Nacional- Gana Más",
     "Loteria Nacional- Noche",
@@ -34,95 +27,95 @@ LOTERIAS = [
     "Anguila 9PM",
 ]
 
+HISTORIAL_DIR = "historial_loterias"
+os.makedirs(HISTORIAL_DIR, exist_ok=True)
 BASE_URL = "https://www.loteriadominicana.com.do/"
 
-# ---------- Funciones ----------
+# ---------------- FUNCIONES ----------------
+def normalize(s):
+    return s.strip().lower()
 
-def normalize_text(s):
-    """Quita acentos y espacios, pasa a minúsculas"""
-    s = unicodedata.normalize('NFKD', s).encode('ASCII','ignore').decode()
-    s = s.lower().strip()
-    return s
-
-def scrape_resultados():
-    """Extrae el número 1ro de cada lotería."""
-    resultados = {}
+def fetch_results_page():
     resp = requests.get(BASE_URL, timeout=10)
     resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
+    return resp.text
 
+def parse_results(html):
+    soup = BeautifulSoup(html, "html.parser")
+    results = []
+    date = datetime.date.today().isoformat()
     for lot in LOTERIAS:
-        lot_norm = normalize_text(lot)
-        # Buscar encabezados que contengan la lotería
-        header = soup.find(lambda tag: tag.name in ["h2","h3","h4","strong","b"] 
-                           and lot_norm in normalize_text(tag.get_text()))
+        header = soup.find(lambda tag: tag.name in ["h2","h3","h4","strong","b"] and normalize(lot) in normalize(tag.get_text()))
         if header:
-            # Buscar siguiente número que sea 1 o 2 dígitos
             text = header.find_next(string=True)
             while text:
                 s = text.strip()
                 if s.isdigit() and len(s) <= 2:
-                    resultados[lot] = s.zfill(2)
+                    results.append({"fecha": date, "loteria": lot, "numero_1ro": s.zfill(2)})
                     break
                 text = text.find_next(string=True)
-    return resultados
+    return results
 
-def cargar_historial(loteria):
-    archivo = os.path.join(HIST_DIR, f"{loteria.replace(' ','_')}.csv")
-    if os.path.exists(archivo):
-        df = pd.read_csv(archivo, dtype={"numero":str})
+def save_historial(df):
+    for lot in LOTERIAS:
+        df_lot = df[df["loteria"]==lot]
+        if df_lot.empty:
+            continue
+        file_path = os.path.join(HISTORIAL_DIR, f"{lot.replace(' ','_')}.csv")
+        if os.path.exists(file_path):
+            df_exist = pd.read_csv(file_path)
+            df_lot = pd.concat([df_exist, df_lot]).drop_duplicates(subset=["fecha","numero_1ro"])
+        df_lot.to_csv(file_path, index=False)
+
+def load_historial(loteria):
+    file_path = os.path.join(HISTORIAL_DIR, f"{loteria.replace(' ','_')}.csv")
+    if os.path.exists(file_path):
+        return pd.read_csv(file_path)
     else:
-        df = pd.DataFrame(columns=["fecha","numero"])
-    return df, archivo
+        return pd.DataFrame(columns=["fecha","loteria","numero_1ro"])
 
-def guardar_historial(loteria, numero):
-    df, archivo = cargar_historial(loteria)
-    fecha = datetime.date.today().isoformat()
-    if not ((df["fecha"] == fecha) & (df["numero"] == numero)).any():
-        df = pd.concat([df, pd.DataFrame([{"fecha": fecha, "numero": numero}])], ignore_index=True)
-        df.to_csv(archivo, index=False)
-    return df
+def generar_linea_del_dia(numero_base):
+    """Genera el AB -> ABA automáticamente"""
+    a, b = numero_base[0], numero_base[1]
+    return f"{a}{b}{a}"
 
-def calcular_vibracion(fecha=None):
-    if fecha is None:
-        fecha = datetime.date.today()
-    return (fecha.year + fecha.month + fecha.day) % 100
+# ---------------- STREAMLIT ----------------
+st.title("Línea del Día - Loterías Dominicanas y Americanas")
 
-def generar_linea_dia(numero):
-    numero = str(numero).zfill(2)
-    if numero[0] == numero[1]:
-        return numero  # AA → AA
-    else:
-        return numero[0] + numero[1] + numero[0]  # AB → ABA
+# Selección de lotería
+loteria_sel = st.selectbox("Selecciona la lotería:", LOTERIAS)
 
-# ---------- Interfaz ----------
-
-st.subheader("Selecciona la lotería")
-loteria_sel = st.selectbox("Lotería", LOTERIAS)
-
-if st.button("Actualizar resultados + generar Línea del Día"):
+# Botón de actualizar resultados
+if st.button("Actualizar resultados"):
+    st.info("Actualizando resultados desde la página...")
     try:
-        resultados = scrape_resultados()
-        numero_base = resultados.get(loteria_sel)
-        if numero_base is None:
-            st.warning("No se encontró resultado para esa lotería — revisa la página.")
-        else:
-            guardar_historial(loteria_sel, numero_base)
-            vibr = calcular_vibracion()
-            linea = generar_linea_dia(numero_base)
-            st.markdown(f"**Fecha:** {datetime.date.today().isoformat()}")
-            st.markdown(f"**Vibración del día:** {vibr}")
-            st.markdown(f"**Número base (1ro):** <span style='font-size:24px;color:blue'>{numero_base}</span>", unsafe_allow_html=True)
-            st.markdown(f"**Línea del Día:** <span style='font-size:32px;color:green'>{linea}</span>", unsafe_allow_html=True)
+        html = fetch_results_page()
+        res = parse_results(html)
+        df = pd.DataFrame(res)
+        save_historial(df)
+        st.success("Resultados actualizados y guardados en historial.")
     except Exception as e:
-        st.error("Error al obtener resultados: " + str(e))
+        st.error(f"Error al actualizar: {e}")
 
-st.subheader("Historial de la lotería")
-df_hist, _ = cargar_historial(loteria_sel)
-if not df_hist.empty:
-    st.dataframe(df_hist.sort_values("fecha", ascending=False).head(20))
-else:
-    st.write("No hay historial aún para esta lotería.")
+# Mostrar historial
+if st.button("Mostrar historial"):
+    df_hist = load_historial(loteria_sel)
+    if df_hist.empty:
+        st.warning("No hay historial para esta lotería.")
+    else:
+        st.dataframe(df_hist)
+
+# Generar Línea del Día
+st.subheader("Generar Línea del Día")
+numero_input = st.text_input("Número base (dos dígitos) para la línea del día:", max_chars=2)
+
+if st.button("Generar línea"):
+    if len(numero_input)==2 and numero_input.isdigit():
+        linea = generar_linea_del_dia(numero_input)
+        st.markdown(f"<span style='font-size:40px; color:blue;'>{linea}</span>", unsafe_allow_html=True)
+    else:
+        st.error("Introduce un número válido de dos dígitos.")
+
 
 
 
